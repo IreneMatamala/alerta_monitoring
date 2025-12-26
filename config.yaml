@@ -1,10 +1,10 @@
 interval_minutes: 5
 
 urls:
-  - https://www.google.com
+  - https://www.google.es
   - https://tssciberseguridad.com/
   - https://www.github.com
   - https://www.wikipedia.org
-  - https://httpstat.us/404
-  - https://httpstat.us/500
-  - https://httpstat.us/503
+  - https://httpbin.org/status/404
+  - https://httpbin.org/status/500
+  - https://httpbin.org/status/503
