@@ -2,6 +2,8 @@ interval_minutes: 5
 
 urls:
   - https://www.google.com
+  - https://tssciberseguridad.com/
+  - https://www.github.com
   - https://www.wikipedia.org
   - https://httpstat.us/404
   - https://httpstat.us/500
