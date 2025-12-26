@@ -5,11 +5,14 @@ import yaml
 import os
 from datetime import datetime
 
-DB_NAME = "database.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, "database.db")
+REPORTS_DIR = os.path.join(BASE_DIR, "reports")
+REPORT_FILE = os.path.join(REPORTS_DIR, "daily_report.md")
 
 
 def load_config():
-    with open("config.yaml", "r") as file:
+    with open(os.path.join(BASE_DIR, "config.yaml"), "r") as file:
         return yaml.safe_load(file)
 
 
@@ -36,9 +39,7 @@ def check_url(url):
         response = requests.get(url, timeout=10)
         response_time = time.time() - start
 
-        # Consideramos UP cualquier 2xx o 3xx
         status = "UP" if 200 <= response.status_code < 400 else "DOWN"
-
         return response.status_code, response_time, status
 
     except requests.exceptions.RequestException:
@@ -63,8 +64,8 @@ def save_result(url, status_code, response_time, status):
 
 
 def generate_daily_report():
-    # Asegura que el directorio exista (clave para CI/CD)
-    os.makedirs("reports", exist_ok=True)
+    # 🔐 Garantiza que el directorio existe (CI/CD safe)
+    os.makedirs(REPORTS_DIR, exist_ok=True)
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -81,7 +82,7 @@ def generate_daily_report():
     results = cursor.fetchall()
     conn.close()
 
-    with open("reports/daily_report.md", "w") as report:
+    with open(REPORT_FILE, "w") as report:
         report.write("# Informe diario de Uptime\n\n")
         report.write(f"Fecha: {datetime.utcnow().date()}\n\n")
 
