@@ -22,13 +22,6 @@ El objetivo es detectar caídas, errores HTTP o lentitud en servicios web de for
 - SQLite
 - Requests
 
-## URLs de prueba
-
-- https://www.google.com
-- https://www.wikipedia.org
-- https://httpstat.us/404
-- https://httpstat.us/500
-- https://httpstat.us/503
 
 ## Ejecución local
 
