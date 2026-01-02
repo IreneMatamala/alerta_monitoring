@@ -47,6 +47,8 @@ def check_url(url, config):
 
         if status == 200:
             state = "OK"
+        elif status == 403:
+            state = "BLOCKED"
         elif 400 <= status < 500:
             state = "CLIENT_ERROR"
         elif 500 <= status < 600:
@@ -102,13 +104,18 @@ def generate_daily_report():
 
     with open(report_path, "w") as report:
         report.write("# 📊 Informe Diario de Monitorización\n\n")
-        report.write("| URL | Uptime (%) | Latencia media (ms) |\n")
-        report.write("|-----|------------|--------------------|\n")
+        report.write("| URL | Estado observado | Uptime (%) | Latencia media (ms) |\n")
+        report.write("|-----|------------------|------------|--------------------|\n")
 
         for url, total, ok, avg_latency in rows:
             uptime = round((ok / total) * 100, 2) if total else 0
             avg_latency = int(avg_latency) if avg_latency else "N/A"
-            report.write(f"| {url} | {uptime}% | {avg_latency} |\n")
+
+            estado = "OK" if uptime == 100 else "CON INCIDENTES"
+
+            report.write(
+                f"| {url} | {estado} | {uptime}% | {avg_latency} |\n"
+            )
 
 def main():
     config = load_config()
@@ -118,15 +125,15 @@ def main():
         status, state, latency = check_url(url, config)
         save_check(url, status, state, latency)
 
-        if state != "OK":
-            print(f"[ALERTA] {url} → {state} (status {status})")
-        else:
+        if state == "OK":
             if latency > config["latency_critical_ms"]:
                 print(f"[CRITICAL] {url} lenta ({latency} ms)")
             elif latency > config["latency_warning_ms"]:
                 print(f"[WARNING] {url} lenta ({latency} ms)")
             else:
                 print(f"[OK] {url} ({latency} ms)")
+        else:
+            print(f"[ALERTA] {url} → {state} (status {status})")
 
     generate_daily_report()
 
