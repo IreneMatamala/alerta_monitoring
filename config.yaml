@@ -8,3 +8,7 @@ urls:
   - https://httpbin.org/status/404
   - https://httpbin.org/status/500
   - https://httpbin.org/status/503
+
+timeout_seconds: 5
+latency_warning_ms: 1000
+latency_critical_ms: 3000
