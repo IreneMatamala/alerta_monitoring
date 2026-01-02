@@ -2,113 +2,133 @@ import requests
 import sqlite3
 import time
 import yaml
-import os
 from datetime import datetime
+from pathlib import Path
 
+DB_PATH = "monitoring.db"
+REPORTS_DIR = Path("reports")
+REPORTS_DIR.mkdir(exist_ok=True)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "database.db")
-REPORTS_DIR = os.path.join(BASE_DIR, "reports")
-REPORT_PATH = os.path.join(REPORTS_DIR, "daily_report.md")
-
+HEADERS = {
+    "User-Agent": "TSS-Monitor/1.0"
+}
 
 def load_config():
-    config_path = os.path.join(BASE_DIR, "config.yaml")
-    with open(config_path, "r") as file:
-        return yaml.safe_load(file)
-
+    with open("config.yaml", "r") as f:
+        return yaml.safe_load(f)
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS uptime (
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS checks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            url TEXT,
+            url TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
             status_code INTEGER,
-            response_time REAL,
-            status TEXT
+            state TEXT,
+            latency_ms INTEGER
         )
     """)
     conn.commit()
     conn.close()
 
+def check_url(url, config):
+    start_time = time.time()
 
-def check_url(url):
     try:
-        start = time.time()
-        response = requests.get(url, timeout=10, allow_redirects=False)
-        response_time = time.time() - start
+        response = requests.get(
+            url,
+            timeout=config["timeout_seconds"],
+            headers=HEADERS
+        )
+        latency = int((time.time() - start_time) * 1000)
+        status = response.status_code
 
-        
-        status = "UP" if 200 <= response.status_code < 400 else "DOWN"
-        return response.status_code, response_time, status
+        if status == 200:
+            state = "OK"
+        elif 400 <= status < 500:
+            state = "CLIENT_ERROR"
+        elif 500 <= status < 600:
+            state = "SERVER_ERROR"
+        else:
+            state = "UNKNOWN"
 
+    except requests.exceptions.Timeout:
+        status = 0
+        latency = 0
+        state = "TIMEOUT"
     except requests.exceptions.RequestException:
-        return 0, 0, "DOWN"
+        status = 0
+        latency = 0
+        state = "CONNECTION_ERROR"
 
+    return status, state, latency
 
-def save_result(url, status_code, response_time, status):
+def save_check(url, status, state, latency):
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO uptime (timestamp, url, status_code, response_time, status)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO checks (url, timestamp, status_code, state, latency_ms)
         VALUES (?, ?, ?, ?, ?)
     """, (
-        datetime.utcnow().isoformat(),
         url,
-        status_code,
-        response_time,
-        status
+        datetime.utcnow().isoformat(),
+        status,
+        state,
+        latency
     ))
     conn.commit()
     conn.close()
 
-
 def generate_daily_report():
-   
-    os.makedirs(REPORTS_DIR, exist_ok=True)
-
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
-    cursor.execute("""
-        SELECT url,
-               COUNT(*) AS total,
-               SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END) AS up_count,
-               AVG(response_time) AS avg_response
-        FROM uptime
+    cur.execute("""
+        SELECT
+            url,
+            COUNT(*) AS total_checks,
+            SUM(CASE WHEN state = 'OK' THEN 1 ELSE 0 END) AS ok_checks,
+            AVG(latency_ms) AS avg_latency
+        FROM checks
         GROUP BY url
     """)
 
-    results = cursor.fetchall()
+    rows = cur.fetchall()
     conn.close()
 
-    with open(REPORT_PATH, "w") as report:
-        report.write("# Informe diario de Uptime\n\n")
-        report.write(f"Fecha: {datetime.utcnow().date()}\n\n")
+    report_path = REPORTS_DIR / "daily_report.md"
 
-        for url, total, up_count, avg_response in results:
-            uptime = (up_count / total) * 100 if total else 0
-            report.write(f"## {url}\n")
-            report.write(f"- Uptime: {uptime:.2f}%\n")
-            report.write(f"- Tiempo medio de respuesta: {avg_response:.2f} s\n\n")
+    with open(report_path, "w") as report:
+        report.write("# 📊 Informe Diario de Monitorización\n\n")
+        report.write("| URL | Uptime (%) | Latencia media (ms) |\n")
+        report.write("|-----|------------|--------------------|\n")
 
+        for url, total, ok, avg_latency in rows:
+            uptime = round((ok / total) * 100, 2) if total else 0
+            avg_latency = int(avg_latency) if avg_latency else "N/A"
+            report.write(f"| {url} | {uptime}% | {avg_latency} |\n")
 
 def main():
     config = load_config()
     init_db()
 
     for url in config["urls"]:
-        status_code, response_time, status = check_url(url)
-        save_result(url, status_code, response_time, status)
+        status, state, latency = check_url(url, config)
+        save_check(url, status, state, latency)
 
-        if status == "DOWN":
-            print(f"[ALERTA] {url} no está disponible (status: {status_code})")
+        if state != "OK":
+            print(f"[ALERTA] {url} → {state} (status {status})")
+        else:
+            if latency > config["latency_critical_ms"]:
+                print(f"[CRITICAL] {url} lenta ({latency} ms)")
+            elif latency > config["latency_warning_ms"]:
+                print(f"[WARNING] {url} lenta ({latency} ms)")
+            else:
+                print(f"[OK] {url} ({latency} ms)")
 
     generate_daily_report()
-
 
 if __name__ == "__main__":
     main()
